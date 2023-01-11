@@ -1,7 +1,7 @@
 #include<iostream>
 #include<bitset>
-#include"instr.h"
-#include"cpu.h"
+#include<instr.h>
+#include<cpu.h>
 
 int main() {
     lc3::AND test;

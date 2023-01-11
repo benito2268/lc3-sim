@@ -9,13 +9,9 @@
 namespace lc3 {
 
     void NOT::exec(Instruction i) {
-        //for not we only care about bits 11-6
-        //TODO check this code (it doesnt work)
+        //for not we only care about bits 6-11
         int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
         int src = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
-
-        //test code
-        Cpu::registers[src] = std::bitset<16>{"1111111100000000"};
 
         //perform not and store in dst
         for(int i = 0; i < WORDSIZE; i++) {
@@ -24,7 +20,7 @@ namespace lc3 {
         }
 
         //set cc's
-        setCC(Cpu::registers[dst]);
+        util_funcs::setCC(Cpu::registers[dst]);
     }
 
     void ADD::exec(Instruction i) {
@@ -37,12 +33,12 @@ namespace lc3 {
             tmp_dst = dst;
             int src1 = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
 
-            //get immediate value into bitset
+            //get immediate value from instruction
             std::bitset<WORDSIZE> imm(std::string(i.to_string().substr(11, 5)));
 
             int carry = 0;
 
-            //perform not and store in dst
+            //perform add and store in dst
             for(int i = 0; i < WORDSIZE || carry != 0; i++) {
                 int bitsum = Cpu::registers[src1][i] + imm[i] + carry;
                 switch(bitsum) {
@@ -81,7 +77,7 @@ namespace lc3 {
 
             int carry = 0;
 
-            //perform not and store in dst
+            //perform add and store in dst
             for(int i = 0; i < WORDSIZE; i++) {
                 int bitsum = Cpu::registers[src1][i] + Cpu::registers[src2][i] + carry;
                 switch(bitsum) {
@@ -112,7 +108,7 @@ namespace lc3 {
         }
 
         //set cc's
-        setCC(Cpu::registers[tmp_dst]);
+        util_funcs::setCC(Cpu::registers[tmp_dst]);
     }
 
     void AND::exec(Instruction i) {
@@ -146,9 +142,10 @@ namespace lc3 {
         }
 
         //set cc's
-        setCC(Cpu::registers[tmp_dst]);
+        util_funcs::setCC(Cpu::registers[tmp_dst]);
     }
 
+    //branch according the the cpu's control codes
     void BR::exec(Instruction i) {
         //check the cc
         if(Cpu::cc[0] == 1) {
@@ -168,29 +165,32 @@ namespace lc3 {
                 goto do_branch;
             }
         } else {
-            //else it's BR(never) so just return
+            //else it's BR never so just return
             return;
         }
         //cursed label
         do_branch:
             //do the branch - add pc to offset
-            addToPC(std::bitset<16>{i.to_string().substr(7, 9)});
+            util_funcs::addToPC(std::bitset<16>{i.to_string().substr(7, 9)});
     }
 
+    //jump
     void JMP::exec(Instruction i) {
         //really simple, just goes to the address in the base reg
         int base_r = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
         Cpu::pc = Cpu::registers[base_r];
     }
 
+    //jump to subroutine
     void JSR::exec(Instruction i) {
         //save the return addr in R7
         Cpu::registers[R7] = Cpu::pc;
 
         //add offset to pc
-        addToPC(std::bitset<16>{i.to_string().substr(6)});
+        util_funcs::addToPC(std::bitset<16>{i.to_string().substr(6)});
     }
 
+    //jump to subroutine register
     void JSRR::exec(Instruction i) {
         //set the temp reg
         Cpu::registers[RTEMP] = Cpu::registers[R7];
@@ -201,38 +201,40 @@ namespace lc3 {
         //set the pc
         Cpu::pc = Cpu::registers[base_r];
 
-        //save R7
+        //restore R7
         Cpu::registers[R7] = Cpu::registers[RTEMP];
     }
 
+    //load pc-relative
     void LD::exec(Instruction i) {
         //seperate the dst register
         int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
 
         //isolate the offset
         std::bitset<16> offset = std::bitset<16>{i.to_string().substr(7)};
-        std::bitset<16> bin_addr = addPCTo(offset);
+        util_funcs::addPCTo(offset);
 
         //convert the effective address to decimal
-        int dec_addr = conv::bin16_to_dec(bin_addr);
+        int dec_addr = conv::bin16_to_dec(offset);
 
         //load the binary value in memory into the destination register
         Cpu::registers[dst] = Cpu::mem[dec_addr];
 
         //set the cc's
-        setCC(Cpu::registers[dst]);
+        util_funcs::setCC(Cpu::registers[dst]);
     }
 
+    //load indirect
     void LDI::exec(Instruction i) {
         //seperate the dst register
         int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
 
         //isolate the offset
         std::bitset<16> offset = std::bitset<16>{i.to_string().substr(7)};
-        std::bitset<16> bin_addr = addPCTo(offset);
+        util_funcs::addPCTo(offset);
 
         //convert the effective address to decimal
-        int dec_addr = conv::bin16_to_dec(bin_addr);
+        int dec_addr = conv::bin16_to_dec(offset);
 
         //load the binary value in memory into the destination register
         std::bitset<16> b_effetive_addr = Cpu::mem[dec_addr];
@@ -242,9 +244,10 @@ namespace lc3 {
         Cpu::registers[dst] = Cpu::mem[d_effective_addr];
 
         //set the cc's
-        setCC(Cpu::registers[dst]);
+        util_funcs::setCC(Cpu::registers[dst]);
     }
 
+    //load base-offset
     void LDR::exec(Instruction i) {
         //compute the destination and base registers
         int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
@@ -258,9 +261,10 @@ namespace lc3 {
         Cpu::registers[dst] = Cpu::mem[offset + base_addr];
 
         //set the cc's
-        setCC(Cpu::registers[dst]);
+        util_funcs::setCC(Cpu::registers[dst]);
     }
 
+    //load effective address
     void LEA::exec(Instruction i) {
         //calculate the dst register
         int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
@@ -269,46 +273,50 @@ namespace lc3 {
         std::bitset<16> offset{i.to_string().substr(7)};
         
         //put the effective address in the dst register
-        Cpu::registers[dst] = addPCTo(offset);
-
+        util_funcs::addPCTo(offset);
+        Cpu::registers[dst] = offset;
         //set the cc's
-        setCC(Cpu::registers[dst]);
+        util_funcs::setCC(Cpu::registers[dst]);
     }
 
+    //return
     void RET::exec(Instruction i) {
         //same as jmp R7
         Cpu::pc = Cpu::registers[R7];
     }
 
+    //return from interrupt
     void RTI::exec(Instruction i) {
         //currently unused
     }
 
+    //store pc-relative
     void ST::exec(Instruction i) {
         //determine src register
         int src = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
 
         //determine offset
         std::bitset<16> offset = std::bitset<16>{i.to_string().substr(7)};
-        std::bitset<16> bin_addr = addPCTo(offset);
+        util_funcs::addPCTo(offset);
 
         //convert the effective address to decimal
-        int dec_addr = conv::bin16_to_dec(bin_addr);
+        int dec_addr = conv::bin16_to_dec(offset);
 
         //store the contents of src in mem
         Cpu::mem[dec_addr] = Cpu::registers[src];
     }
 
+    //store indirect
     void STI::exec(Instruction i) {
         //determine src register
         int src = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
 
         //determine offset
         std::bitset<16> offset = std::bitset<16>{i.to_string().substr(7)};
-        std::bitset<16> bin_addr_ind = addPCTo(offset);
+        util_funcs::addPCTo(offset);
 
         //convert the indirect address to decimal
-        int dec_addr_ind = conv::bin16_to_dec(bin_addr_ind);
+        int dec_addr_ind = conv::bin16_to_dec(offset);
 
         //compute the effective address
         std::bitset<16> bin_addr_eff = Cpu::mem[dec_addr_ind];
@@ -318,6 +326,7 @@ namespace lc3 {
         Cpu::mem[dec_addr_eff] = Cpu::registers[src];
     }
 
+    //store base-offset
     void STR::exec(Instruction i) {
         //compute the src and base registers
         int src = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
@@ -330,6 +339,7 @@ namespace lc3 {
         Cpu::mem[base_addr + offset] = Cpu::registers[src];
     }
 
+    //jump to system service routine
     void TRAP::exec(Instruction i) {
         //jump to the specified trap vector
         //JUMP Table layout
@@ -344,9 +354,9 @@ namespace lc3 {
         //===========================
 
         //load address from jump vector table
-        int vector = conv::bin8_to_dec(i.to_string().substr(7));
+        int vector = conv::bin8_to_dec(std::bitset<8>{i.to_string().substr(7)});
         std::bitset<16> jmp_addr = Cpu::mem[vector];
-        int jmp_addr_dec = bin16_to_dec(jmp_addr);
+        int jmp_addr_dec = conv::bin16_to_dec(jmp_addr);
 
         //jump to the subroutine
         Cpu::pc = Cpu::mem[jmp_addr_dec];

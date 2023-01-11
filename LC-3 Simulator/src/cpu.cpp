@@ -41,12 +41,17 @@ namespace lc3 {
         ir = mem[inst_addr];
 
         //increment the pc
-        addToPC(std::bitset<16>{"0000000000000001"});
+        util_funcs::addToPC(std::bitset<16>{"0000000000000001"});
 
         //DI stage
         //=====================================
-        std::bitset<4> opcode = {ir.to_string().sub_str(0, 4)};
-        
+        std::bitset<4> opcode{ir.to_string().substr(0, 4)};
+
+        //EO stage
+        //=====================================
+        INSTR* instruction = util_funcs::getInstFromOpCode(ir);
+        instruction->exec(ir);
+        delete instruction;
     }
 
     void Cpu::halt() {
