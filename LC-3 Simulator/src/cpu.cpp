@@ -1,7 +1,9 @@
 //lc3 simulator - file cpu.cpp
 #include<cpu.h>
+#include<instr.h>
 #include<base.h>
 #include<utils.h>
+#include<iostream>
 
 namespace lc3 {
     
@@ -23,6 +25,12 @@ namespace lc3 {
         //the ir starts with BR none (x0000)
         //but again must be changed
         this->ir = std::bitset<16> {"0000000000000000"};
+
+        //our little test program
+        mem[0x3000] = std::bitset<16>{"1110000000000010"};
+        mem[0x3001] = std::bitset<16>{"1111000000100010"};
+        mem[0x3002] = std::bitset<16>{"1111000000100101"};
+        mem[0x3003] = std::bitset<16>{"0000000001001000"};
     }
 
     void Cpu::init_mem() {
@@ -40,12 +48,14 @@ namespace lc3 {
         int inst_addr = conv::bin16_to_dec(pc);
         ir = mem[inst_addr];
 
+        //std::cout << pc.to_string() << std::endl;
+
         //increment the pc
         util_funcs::addToPC(std::bitset<16>{"0000000000000001"});
 
         //DI stage
         //=====================================
-        std::bitset<4> opcode{ir.to_string().substr(0, 4)};
+        std::bitset<4> opcode{ir.to_string().substr(0, 4)}; 
 
         //EO stage
         //=====================================
@@ -55,6 +65,21 @@ namespace lc3 {
     }
 
     void Cpu::halt() {
+        std::cout << "*END OF PROGRAM*" << std::endl;
+        std::cout << "===============================" << std::endl;
+        std::cout << "PC -> " << Cpu::pc.to_string() << std::endl;
+        std::cout << "IR -> " << Cpu::ir.to_string() << std::endl;
+        std::cout << "===============================" << std::endl;
+        std::cout << "R0 -> " << Cpu::registers[0].to_string() << std::endl;
+        std::cout << "R1 -> " << Cpu::registers[1].to_string() << std::endl;
+        std::cout << "R2 -> " << Cpu::registers[2].to_string() << std::endl;
+        std::cout << "R3 -> " << Cpu::registers[3].to_string() << std::endl;
+        std::cout << "R4 -> " << Cpu::registers[4].to_string() << std::endl;
+        std::cout << "R5 -> " << Cpu::registers[5].to_string() << std::endl;
+        std::cout << "R6 -> " << Cpu::registers[6].to_string() << std::endl;
+        std::cout << "R7 -> " << Cpu::registers[7].to_string() << std::endl;
+        std::cout << "===============================" << std::endl;
 
+        std::exit(0);
     }
 }

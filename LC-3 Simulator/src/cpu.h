@@ -26,6 +26,6 @@ namespace lc3 {
         void init();
         void init_mem();
         void exec();
-        void halt();
+        static void halt();
     };
 }

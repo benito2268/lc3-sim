@@ -2,6 +2,7 @@
 //a file providing functions for converting between hex - dex - bin
 #pragma once
 #include<cmath>
+#include<iostream>
 #include<bitset>
 
 namespace lc3 {
@@ -31,7 +32,7 @@ namespace lc3 {
         }
 
         static int bin8_to_dec(std::bitset<8> bin) {
-           int dec = 0; 
+           int dec = 0;
            for(int i = 0; i < 8; i++) {
                 if(bin[i] == 1) {
                     dec += pow(2, i);

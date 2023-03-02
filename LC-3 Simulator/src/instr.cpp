@@ -4,6 +4,8 @@
 #include<base.h>
 #include<cpu.h>
 #include<utils.h>
+#include<cstdio>
+#include<iostream>
 #include<string>
 
 namespace lc3 {
@@ -354,11 +356,29 @@ namespace lc3 {
         //===========================
 
         //load address from jump vector table
-        int vector = conv::bin8_to_dec(std::bitset<8>{i.to_string().substr(7)});
+        int vector = conv::bin8_to_dec(std::bitset<8>{i.to_string().substr(8)});
         std::bitset<16> jmp_addr = Cpu::mem[vector];
         int jmp_addr_dec = conv::bin16_to_dec(jmp_addr);
 
-        //jump to the subroutine
-        Cpu::pc = Cpu::mem[jmp_addr_dec];
+        //printf("%d\n", vector);
+        //std::cout << i.to_string().substr(7) << std::endl;
+
+        //jump to the subroutine ~ just kidding nerd
+        //Cpu::pc = Cpu::mem[jmp_addr_dec];
+        switch(vector) {
+        case 0x20:
+            break;
+        case 0x21:
+            break;
+        case 0x22:
+            //puts ~ print what's in R0 as a string
+            printf("%s\n", Cpu::registers[0].to_string().c_str());
+            break;
+        case 0x23:
+            break;
+        case 0x25:
+            Cpu::halt();
+            break;
+        }
     }
 }
