@@ -1,387 +1,238 @@
-// lc-3 simulator - file instr.cpp
-// defines the semantics of LC-3 intructions
-#include<instr.h>
-#include<base.h>
-#include<cpu.h>
-#include<utils.h>
-#include<cstdio>
+﻿/* 
+ * instr.cpp ~ defines the set of lc3 instructions
+ * author = ben staehle
+ * date = 5/17/23
+ */
+
+#include"instr.h"
+#include"cpu.h"
 #include<iostream>
-#include<string>
+#include<iomanip>
+#include<cstdint>
+#include<map>
 
-namespace lc3 {
+namespace lc3 
+{
+	using p = lc_cpu;
 
-    void NOT::exec(Instruction i) {
-        //for not we only care about bits 6-11
-        int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
-        int src = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
+	//note that uint16_t represents signed data in this implementation
+	uint16_t sign_ext_16(uint16_t var, int n) { 
+		if ((var >> (n - 1)) & 1) {
+			var |= (0xFFFF << n); //negetive
+		}
+		return var; //if positive, cast will make compiler auto sign extend
+	}
 
-        //perform not and store in dst
-        for(int i = 0; i < WORDSIZE; i++) {
-            //not each bit
-            Cpu::registers[dst][i] = !Cpu::registers[src][i];
-        }
+	//var must be sign extended
+	void set_cc(uint16_t var) {
+		if (CHECK_BIT(var, 0)) {
+			//positive
+			p::cc[2] = 1;
+		}
+		else {
+			if (!var) {
+				//zero
+				p::cc[1] = 1;
+			}
+			else {
+				//negative
+				p::cc[0] = 1;
+			}
+		}
+	}
 
-        //set cc's
-        util_funcs::setCC(Cpu::registers[dst]);
-    }
+	//void load_table() {
+	//	//instructions are stored at the index equal to the value of their opcode
+	//	//note JSRR is excluded since it shares an opcode with JSR
+	//	table = { {"BR", &BR}, {"ADD", &ADD}, {"LD", &LD}, {"ST", &ST}, {"JSR", &JSR},
+	//			  {"AND", &AND}, {"LDR", &LDR}, {"STR", &STR}, {"???", &ILL}, {"NOT", &NOT},
+	//			  {"LDI", &LDI}, {"STI", &STI}, {"JMP", &JMP}, {"???", &ILL}, {"LEA", &LEA},
+	//			  {"TRAP", &TRAP} };
+	//}
 
-    void ADD::exec(Instruction i) {
-        int tmp_dst = 0;        
-        //instruction is immediate if bit 5 is 1
-        if(i[5] == 1) {
-            //the instruction is "add immediate"
-            //interperate the instruction
-            int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
-            tmp_dst = dst;
-            int src1 = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
+	void NOT() {
+		uint16_t dst = (p::ir & 0xE00) >> 9;
+		uint16_t src = (p::ir & 0x1FF) >> 6;
 
-            //get immediate value from instruction
-            std::bitset<WORDSIZE> imm(std::string(i.to_string().substr(11, 5)));
+		p::registers[dst] = ~p::registers[src];
+	}
 
-            int carry = 0;
+	void ADD() {
+		uint16_t dst = (p::ir & 0xE00) >> 9;
+		uint16_t src1 = (p::ir & 0x1FF) >> 6;
+		if (CHECK_BIT(p::ir, 11)) {
+			//is ADD immediate
+			p::registers[dst] = p::registers[src1] + sign_ext_16(p::ir & 0x1F, 5);
+		}
+		else {
+			//is ADD register
+			uint16_t src2 = (p::ir & 0x7);
+			p::registers[dst] = p::registers[src1] + p::registers[src2];
+ 		}
 
-            //perform add and store in dst
-            for(int i = 0; i < WORDSIZE || carry != 0; i++) {
-                int bitsum = Cpu::registers[src1][i] + imm[i] + carry;
-                switch(bitsum) {
-                    case 0:
-                        Cpu::registers[dst][i] = 0;
-                        break;
-                    case 1:
-                        Cpu::registers[dst][i] = 1;
-                        if(carry) {carry = 0;}
-                        //carry is cleared if it was set
-                        break;
-                    case 2:
-                        Cpu::registers[dst][i] = 0;
-                        if(!carry) {
-                            carry = 1;
-                        }
-                        //carry remains 1 if it was, otherwise is set to 1
-                        break;
-                    case 3:
-                        Cpu::registers[dst][i] = 1;
-                        //carry remains 1
-                        break;
-                    default:
-                        //throw some kind of error
-                        break;
-                }   
-            }
-            
-        } else {
-            //the instruction is add "add register"
-            //interperate the instruction
-            int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
-            tmp_dst = dst;
-            int src1 = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
-            int src2 = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(13, 3)});
+		//set condition codes
+		set_cc(p::registers[dst]);
+	}
 
-            int carry = 0;
+	void AND() {
+		uint16_t dst = (p::ir & 0xE00) >> 9;
+		uint16_t src1 = (p::ir & 0x1FF) >> 6;
+		if (CHECK_BIT(p::ir, 11)) {
+			//is AND immediate
+			p::registers[dst] = p::registers[src1] & sign_ext_16(p::ir & 0x1F, 5);
+		}
+		else {
+			//is AND register
+			uint16_t src2 = (p::ir & 0x7);
+			p::registers[dst] = p::registers[src1] & p::registers[src2];
+		}
 
-            //perform add and store in dst
-            for(int i = 0; i < WORDSIZE; i++) {
-                int bitsum = Cpu::registers[src1][i] + Cpu::registers[src2][i] + carry;
-                switch(bitsum) {
-                    case 0:
-                        Cpu::registers[dst][i] = 0;
-                        break;
-                    case 1:
-                        Cpu::registers[dst][i] = 1;
-                        if(carry) {carry = 0;}
-                        //carry is cleared if it was set
-                        break;
-                    case 2:
-                        Cpu::registers[dst][i] = 0;
-                        if(!carry) {
-                            carry = 1;
-                        }
-                        //carry remains 1 if it was, otherwise is set to 1
-                        break;
-                    case 3:
-                        Cpu::registers[dst][i] = 1;
-                        //carry remains 1
-                        break;
-                    default:
-                        //throw some kind of error
-                        break;
-                }      
-            }
-        }
+		//set condition codes
+		set_cc(p::registers[dst]);
+	}
 
-        //set cc's
-        util_funcs::setCC(Cpu::registers[tmp_dst]);
-    }
+	void LDR() {
+		//calculate registers
+		uint16_t dst = (p::ir & 0xE00) >> 9;
+		uint16_t base = (p::ir & 0x1FF) >> 6;
 
-    void AND::exec(Instruction i) {
-        int tmp_dst = 0;
-        if(i[5] == 1) {
-            //the instruction is "and immediate"
-            //interperate the instruction
-            int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
-            tmp_dst = dst;
-            int src1 = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
+		//calcualte effective address and load from memory
+		uint16_t addr = p::registers[base] + (int16_t)(sign_ext_16(p::ir & 0x3F, 6));
+		p::registers[dst] = p::mem[addr];
 
-            //get immediate value into bitset
-            std::bitset<WORDSIZE> imm(std::string(i.to_string().substr(11, 5)));
+		//set cc's
+		set_cc(p::registers[dst]);
+	}
 
-            //loop through and and 
-            for(int i = 0; i < WORDSIZE; i++) {
-                Cpu::registers[dst][i] = Cpu::registers[src1][i] & imm[i];
-            }
+	void STR() {
+		//calculate registers
+		uint16_t src = (p::ir & 0xE00) >> 9;
+		uint16_t base = (p::ir & 0x1FF) >> 6;
+		
+		//caclulate effective addr and store in memory
+		uint16_t addr = p::registers[base] + (int16_t)(sign_ext_16(p::ir & 0x3F, 6)); //cast to signed
+		p::mem[addr] = p::registers[src];
 
-        } else {
-            //the instruction is "and register"
-            int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
-            tmp_dst = dst;
-            int src1 = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
-            int src2 = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(13, 3)});
+		//STR does not update cc's
+	}
 
-            //loop through and and 
-            for(int i = 0; i < WORDSIZE; i++) {
-                Cpu::registers[dst][i] = Cpu::registers[src1][i] & Cpu::registers[src2][i];
-            }
-        }
+	void LD() {
+		uint16_t dst = (p::ir & 0xE00) >> 9;
 
-        //set cc's
-        util_funcs::setCC(Cpu::registers[tmp_dst]);
-    }
+		//calc effective address
+		uint16_t addr = p::pc + (int16_t)(sign_ext_16(p::ir & 0x1FF, 9)); //cast to signed
+		p::registers[dst] = p::mem[addr];
 
-    //branch according the the cpu's control codes
-    void BR::exec(Instruction i) {
-        //check the cc
-        if(Cpu::cc[0] == 1) {
-            //positive
-            if(i[9] == 1) {
-                goto do_branch;
-            }
+		//LD sets the cc's
+		set_cc(p::registers[dst]);
+	}
 
-        } else if(Cpu::cc[2] == 1) {   
-            //negetive
-            if(i[10] == 1) {
-                goto do_branch;
-            }
-        } else if(Cpu::cc[1] == 1) {
-            //zero
-            if(i[11] == 1) {
-                goto do_branch;
-            }
-        } else {
-            //else it's BR never so just return
-            return;
-        }
-        //cursed label
-        do_branch:
-            //do the branch - add pc to offset
-            util_funcs::addToPC(std::bitset<16>{i.to_string().substr(7, 9)});
-    }
+	void ST() {
+		uint16_t src = (p::ir & 0xE00) >> 9;
 
-    //jump
-    void JMP::exec(Instruction i) {
-        //really simple, just goes to the address in the base reg
-        int base_r = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
-        Cpu::pc = Cpu::registers[base_r];
-    }
+		//calc effective address
+		uint16_t addr = p::pc + (int16_t)(sign_ext_16(p::ir & 0x1FF, 9)); //cast to signed
+		p::mem[addr] = p::registers[src];
 
-    //jump to subroutine
-    void JSR::exec(Instruction i) {
-        //save the return addr in R7
-        Cpu::registers[R7] = Cpu::pc;
+		//ST does not set cc's
+	}
 
-        //add offset to pc
-        util_funcs::addToPC(std::bitset<16>{i.to_string().substr(6)});
-    }
+	void LDI() {
+		uint16_t dst = (p::ir & 0xE00) >> 9;
 
-    //jump to subroutine register
-    void JSRR::exec(Instruction i) {
-        //set the temp reg
-        Cpu::registers[RTEMP] = Cpu::registers[R7];
+		//find pointer and effective address
+		uint16_t ptr = p::pc + (int16_t)(sign_ext_16(p::ir & 0x1FF, 9)); //cast to signed
+		uint16_t addr = p::mem[ptr];
+		p::registers[dst] = p::mem[addr];
 
-        //same as jmp except save R7
-        int base_r = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
+		//LDI sets the cc's
+		set_cc(p::registers[dst]);
+	}
 
-        //set the pc
-        Cpu::pc = Cpu::registers[base_r];
+	void STI() {
+		uint16_t src = (p::ir & 0xE00) >> 9;
 
-        //restore R7
-        Cpu::registers[R7] = Cpu::registers[RTEMP];
-    }
+		//find pointer and effective address
+		uint16_t ptr = p::pc + (int16_t)(sign_ext_16(p::ir & 0x1FF, 9)); //cast to signed
+		uint16_t addr = p::mem[ptr];
+		p::mem[addr] = p::registers[src];
 
-    //load pc-relative
-    void LD::exec(Instruction i) {
-        //seperate the dst register
-        int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
+		//STI does not set the cc's
+	}
 
-        //isolate the offset
-        std::bitset<16> offset = std::bitset<16>{i.to_string().substr(7)};
-        util_funcs::addPCTo(offset);
+	void LEA() {
+		uint16_t dst = (p::ir & 0xE00) >> 9;
 
-        //convert the effective address to decimal
-        int dec_addr = conv::bin16_to_dec(offset);
+		//load pc + offset into the dst register
+		p::registers[dst] = p::pc + (int16_t)(sign_ext_16(p::ir & 0x1FF, 9));
 
-        //load the binary value in memory into the destination register
-        Cpu::registers[dst] = Cpu::mem[dec_addr];
+		//set cc's
+		set_cc(p::registers[dst]);
+	}
 
-        //set the cc's
-        util_funcs::setCC(Cpu::registers[dst]);
-    }
+	void BR() {
+		uint16_t nzp = (p::ir & 0xE00) >> 9;
+		uint16_t cc = (uint16_t)p::cc.to_ulong(); //cast not really needed but ¯\_(ツ)_/¯
 
-    //load indirect
-    void LDI::exec(Instruction i) {
-        //seperate the dst register
-        int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
+		if (nzp & cc) {
+			//this means there is a match so we need to branch
+			//note that this works because in c++ vals >= 1 count as true
+			p::pc += int16_t(sign_ext_16(p::ir & 0x1FF, 9));
+		}
 
-        //isolate the offset
-        std::bitset<16> offset = std::bitset<16>{i.to_string().substr(7)};
-        util_funcs::addPCTo(offset);
+		//BR does not update the cc's
+	}
 
-        //convert the effective address to decimal
-        int dec_addr = conv::bin16_to_dec(offset);
+	void JMP() {
+		uint16_t base = (p::ir & 0x1C0) >> 6;
 
-        //load the binary value in memory into the destination register
-        std::bitset<16> b_effetive_addr = Cpu::mem[dec_addr];
+		//load the pc with the value of the base register
+		//MUST cast base to signed
+		p::pc = int16_t(p::registers[base]);
+	}
 
-        //do it again - and this time actually load the value
-        int d_effective_addr = conv::bin16_to_dec(b_effetive_addr);
-        Cpu::registers[dst] = Cpu::mem[d_effective_addr];
+	void TRAP() {
+		//which TRAP vector
+		uint16_t vec = (p::ir & 0xFF);
 
-        //set the cc's
-        util_funcs::setCC(Cpu::registers[dst]);
-    }
+		//lookup the trap vector and get subroutine address
+		uint16_t addr = p::mem[vec];
 
-    //load base-offset
-    void LDR::exec(Instruction i) {
-        //compute the destination and base registers
-        int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
-        int base = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
+		//store the pc in R7
+		//note that RET has to be called in each trap routine
+		p::registers[R7] = p::pc;
 
-        //compute the offset
-        int offset = conv::bin6_to_dec(std::bitset<6>{i.to_string().substr(10)});
-        int base_addr = conv::bin16_to_dec(Cpu::registers[base]);
-        
-        //store the result
-        Cpu::registers[dst] = Cpu::mem[offset + base_addr];
+		//jump the processor
+		p::pc = addr;
+	}
 
-        //set the cc's
-        util_funcs::setCC(Cpu::registers[dst]);
-    }
+	void JSR() {
+		//stores the value of the PC in R7
+		p::registers[R7] = p::pc;
 
-    //load effective address
-    void LEA::exec(Instruction i) {
-        //calculate the dst register
-        int dst = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
+		//calculate offset
+		int16_t offset = int16_t(sign_ext_16(p::ir & 0x7FF, 11)); //cast to signed int
 
-        //calculate the offset and add it to PC
-        std::bitset<16> offset{i.to_string().substr(7)};
-        
-        //put the effective address in the dst register
-        util_funcs::addPCTo(offset);
-        Cpu::registers[dst] = offset;
-        //set the cc's
-        util_funcs::setCC(Cpu::registers[dst]);
-    }
+		//jump the pc to the offset
+		p::pc += offset;
+	}
 
-    //return
-    void RET::exec(Instruction i) {
-        //same as jmp R7
-        Cpu::pc = Cpu::registers[R7];
-    }
+	void JSRR() {
+		//stores the value of the PC in R7
+		p::registers[R7] = p::pc;
 
-    //return from interrupt
-    void RTI::exec(Instruction i) {
-        //currently unused
-    }
+		//base register
+		uint16_t base = (p::ir & 0x1C0) >> 6;
 
-    //store pc-relative
-    void ST::exec(Instruction i) {
-        //determine src register
-        int src = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
+		//jump to value in base register
+		//MUST cast the register to a signed int for this to work 
+		p::pc += int16_t(p::registers[base]);
+	}
 
-        //determine offset
-        std::bitset<16> offset = std::bitset<16>{i.to_string().substr(7)};
-        util_funcs::addPCTo(offset);
-
-        //convert the effective address to decimal
-        int dec_addr = conv::bin16_to_dec(offset);
-
-        //store the contents of src in mem
-        Cpu::mem[dec_addr] = Cpu::registers[src];
-    }
-
-    //store indirect
-    void STI::exec(Instruction i) {
-        //determine src register
-        int src = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
-
-        //determine offset
-        std::bitset<16> offset = std::bitset<16>{i.to_string().substr(7)};
-        util_funcs::addPCTo(offset);
-
-        //convert the indirect address to decimal
-        int dec_addr_ind = conv::bin16_to_dec(offset);
-
-        //compute the effective address
-        std::bitset<16> bin_addr_eff = Cpu::mem[dec_addr_ind];
-        int dec_addr_eff = conv::bin16_to_dec(bin_addr_eff);
-
-        //store the contents
-        Cpu::mem[dec_addr_eff] = Cpu::registers[src];
-    }
-
-    //store base-offset
-    void STR::exec(Instruction i) {
-        //compute the src and base registers
-        int src = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(4, 3)});
-        int base = conv::bin3_to_dec(std::bitset<3>{i.to_string().substr(7, 3)});
-
-        //compute the offset
-        int offset = conv::bin6_to_dec(std::bitset<6>{i.to_string().substr(10)});
-        int base_addr = conv::bin16_to_dec(Cpu::registers[base]);
-
-        Cpu::mem[base_addr + offset] = Cpu::registers[src];
-    }
-
-    //jump to system service routine
-    void TRAP::exec(Instruction i) {
-        //jump to the specified trap vector
-        //JUMP Table layout
-        //===========================
-        //| CODE | VECTOR  | JUMPTO |
-        //===========================
-        //|OUT   | x0021   | x0430  |
-        //|IN    | x0023   | x04A0  |
-        //|HALT  | x0025   | xFD70  |
-        //|PUTS  | x0022   | x0450  |
-        //|GETC  | x0020   | x0400  |
-        //===========================
-
-        //load address from jump vector table
-        int vector = conv::bin8_to_dec(std::bitset<8>{i.to_string().substr(8)});
-        std::bitset<16> jmp_addr = Cpu::mem[vector];
-        int jmp_addr_dec = conv::bin16_to_dec(jmp_addr);
-
-        //printf("%d\n", vector);
-        //std::cout << i.to_string().substr(7) << std::endl;
-
-        //jump to the subroutine ~ just kidding nerd
-        //Cpu::pc = Cpu::mem[jmp_addr_dec];
-        switch(vector) {
-        case 0x20:
-            break;
-        case 0x21:
-            break;
-        case 0x22: {
-            //puts ~ print what's AT THE ADDRESS in R0 as string
-            char* str = util_funcs::binToStr(Cpu::registers[0]);
-            printf("%s", str);
-            delete str;
-            break;
-        }
-        case 0x23:
-            break;
-        case 0x25:
-            Cpu::halt();
-            break;
-        }
-    }
+	void ILL() {
+		//illegal instruction
+		std::cout << "LC3_ERROR: unrecognized opcode at " << std::hex << p::pc << std::endl;
+		//dump code around the error to file/screen
+		p::stop();
+	}
 }

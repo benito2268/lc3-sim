@@ -1,20 +1,18 @@
-//lc3 simulator - file utils.h
+/*
+* utils.h ~ contains random utility code
+* author: Ben Staehle
+* date: 6/25/23
+*/
+
 #pragma once
-#include<bitset>
-#define WORDSIZE 16
+#include<string>
 
-namespace lc3 {
-    //forward decl
-    struct INSTR;
-    typedef std::bitset<WORDSIZE> Register;
-    typedef std::bitset<WORDSIZE> Instruction;
+namespace utils
+{
 
-    struct util_funcs {
-        static void addToPC(std::bitset<16> offset);
-        static void addPCTo(Register& result);
-        static void setCC(Register& result);
-        static INSTR* getInstFromOpCode(std::bitset<16> instr);
-        static char* binToStr(std::bitset<16> addr);
-    };
-    
+}
+
+namespace asml
+{
+	std::string disassemble(uint16_t instr);
 }

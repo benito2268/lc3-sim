@@ -1,94 +1,126 @@
-//lc3 simulator - file cpu.cpp
-#include<cpu.h>
-#include<instr.h>
-#include<base.h>
-#include<utils.h>
+/*
+ * cpu.cpp ~ main cpu implementation
+ * author = ben staehle
+ * date = 5/17/23
+ */
+
+#include"cpu.h"
+#include"load.h"
+#include"instr.h"
+
+#include<cstdlib>
+#include<string>
+#include<cstdint>
+#include<thread>
+#include<chrono>
+
 #include<iostream>
 
-namespace lc3 {
-    
-    void Cpu::init() {
-        //zero out all of the registers
-        for(auto& element : this->registers) {
-            element = std::bitset<16> {"0000000000000000"};
-        }
+/*
+* LC3 Memory Map
+* --------------
+*     0x0000	}
+*		~		} Trap Vector Table 
+*	  0x00FF	}
+* --------------
+*	  0x0100	}
+*		~		} Interrupt Vector Table
+*	  0x01FF	}
+* --------------
+*	  0x0200	}
+*		~		} OS Space / Stack
+*	  0x2FFF	}
+* ---------------
+*	  0x3000	}
+*		~		} User Program Space
+*	  0xFDFF	}
+* ---------------
+*	  0xFE00	}
+*		~		} IO / Device Registers
+*	  0xFFFF	}
+* ---------------
+* 
+* Memory Mapped Registers
+* =======================
+* Machine Contol Register (16 bits) = 0xFFFE
+* 
+* Register Fucntions
+* ==================
+* R6	  = stack pointer
+* R7      = holds return values
+*/
 
-       init_mem();
+namespace lc3 
+{
+	void lc_cpu::init() {
+		//at this point registers and memory are zeroed out
+		//set bit 15 (clock enable) of MCR
+		lc_cpu::mem[MCR] = 0x8000;
 
-        //set the cc's to Z -> "010"
-        this->cc = std::bitset<3> {"010"};
+		//lc3::load_table(); //load the opcode matrix
 
-        //the pc starts at x3000 by default, although this MUST be specified in the assembly
-        //0x3000 in bin is 0011000000000000
-        this->pc = std::bitset<16> {"0011000000000000"};
+		//load trap table
+		mem[0x0020] = 0x0400;
+		mem[0x0021] = 0x0430;
+		mem[0x0022] = 0x0450;
+		mem[0x0023] = 0x04A0;
+		mem[0x0024] = 0x04E0;
+		mem[0x0025] = 0xFD70;
 
-        //the ir starts with BR none (x0000)
-        //but again must be changed
-        this->ir = std::bitset<16> {"0000000000000000"};
+		//finally, set up the debugger
+		debugger = std::make_shared<debug::Debugger>();
+	}
 
-        //our little test program
-        mem[0x3000] = std::bitset<16>{"1110000000000010"}; //lea R0
-        mem[0x3001] = std::bitset<16>{"1111000000100010"}; //trap 0x22
-        mem[0x3002] = std::bitset<16>{"1111000000100101"}; //halt
+	void lc_cpu::set_pc(uint16_t imm) {
+		lc_cpu::pc = imm;
+	}
 
-        //load hello world manually into mem
-        mem[0x3003] = std::bitset<16>{"0000000001001000"}; //H
-        mem[0x3004] = std::bitset<16>{"0000000001100101"}; //e
-        mem[0x3005] = std::bitset<16>{"0000000001101100"}; //l
-        mem[0x3006] = std::bitset<16>{"0000000001101100"}; //l
-        mem[0x3007] = std::bitset<16>{"0000000001101111"}; //o
-        mem[0x3008] = std::bitset<16>{"0000000000100001"}; //!
-        mem[0x3009] = std::bitset<16>{"0000000000001010"}; //\n
+	void lc_cpu::run() {
+		using namespace debug;
 
-    }
+		//cpu runs until HALT calls std::exit()
+		while (1) {
+			//check the state of the debugger
+			switch (Debugger::state) {
+			case RUN:
+				break;
+			case STEP:
+				Debugger::state = STOP;
+				break;
+			case SLOW:
+				std::this_thread::sleep_for(std::chrono::seconds(2)); //slow down
+				break;
+			default:
+				break;
+			}
 
-    void Cpu::init_mem() {
-       //zero out all of the memory - this doesn't actually happen in lc3 normally
-        for(auto& element : this->mem) {
-            element = std::bitset<16> {"0000000000000000"};
-        }
-    }
+			debugger->update();
 
-    void Cpu::exec() {
-        //fetch excecute cycle
+			if (!(Debugger::state == STOP)) {
+				ir = mem[pc];
+				pc++;
 
-        //FI stage
-        //=====================================
-        int inst_addr = conv::bin16_to_dec(pc);
-        ir = mem[inst_addr];
+				//decode the opcode
+				uint16_t op = (ir & 0xF000) >> 12;
 
-        //std::cout << pc.to_string() << std::endl;
+				//make instruction name avaliable to debugger
+				std::string name = table[op].name;
 
-        //increment the pc
-        util_funcs::addToPC(std::bitset<16>{"0000000000000001"});
+				//update the debugger
+				debugger->update();
 
-        //DI stage
-        //=====================================
-        std::bitset<4> opcode{ir.to_string().substr(0, 4)}; 
+				//do the operation
+				table[op].operation();
 
-        //EO stage
-        //=====================================
-        INSTR* instruction = util_funcs::getInstFromOpCode(ir);
-        instruction->exec(ir);
-        delete instruction;
-    }
+				//check that the operation has not triggered a HALT
+				if (!((mem[MCR] & 0x8000) >> 15)) {
+					stop();
+				}
+			}
+		}
+	}
 
-    void Cpu::halt() {
-        std::cout << "*END OF PROGRAM*" << std::endl;
-        std::cout << "===============================" << std::endl;
-        std::cout << "PC -> " << Cpu::pc.to_string() << std::endl;
-        std::cout << "IR -> " << Cpu::ir.to_string() << std::endl;
-        std::cout << "===============================" << std::endl;
-        std::cout << "R0 -> " << Cpu::registers[0].to_string() << std::endl;
-        std::cout << "R1 -> " << Cpu::registers[1].to_string() << std::endl;
-        std::cout << "R2 -> " << Cpu::registers[2].to_string() << std::endl;
-        std::cout << "R3 -> " << Cpu::registers[3].to_string() << std::endl;
-        std::cout << "R4 -> " << Cpu::registers[4].to_string() << std::endl;
-        std::cout << "R5 -> " << Cpu::registers[5].to_string() << std::endl;
-        std::cout << "R6 -> " << Cpu::registers[6].to_string() << std::endl;
-        std::cout << "R7 -> " << Cpu::registers[7].to_string() << std::endl;
-        std::cout << "===============================" << std::endl;
-
-        std::exit(0);
-    }
+	void lc_cpu::stop() {
+		std::exit(0);
+	}
 }
